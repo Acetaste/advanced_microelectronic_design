@@ -22,7 +22,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include <watcher.h>
+#include <worker.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,7 +34,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define NUMB_WORKER_TASKS 3
+#define TASK_1_EXTRA_STACK 200
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -68,7 +71,7 @@ const osThreadAttr_t WorkerTask3_attributes = {
 osThreadId_t WatcherTaskHandle;
 const osThreadAttr_t WatcherTask_attributes = {
   .name = "WatcherTask",
-  .stack_size = 128 * 4,
+  .stack_size = 256 * 4,
   .priority = (osPriority_t) osPriorityLow,
 };
 /* USER CODE BEGIN PV */
@@ -324,11 +327,14 @@ static void MX_GPIO_Init(void)
 void StartWorkerTask1(void *argument)
 {
   /* USER CODE BEGIN 5 */
+    uint8_t extra_stack_use[TASK_1_EXTRA_STACK];
+    UNUSED(extra_stack_use);
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+    osDelay(100);
   }
+  osThreadTerminate(NULL);
   /* USER CODE END 5 */
 }
 
@@ -342,11 +348,15 @@ void StartWorkerTask1(void *argument)
 void StartWorkerTask2(void *argument)
 {
   /* USER CODE BEGIN StartWorkerTask2 */
+    uint8_t extra_stack_use[100];
+    UNUSED(extra_stack_use);
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	recursive_factorial(10);
+    osDelay(100);
   }
+  osThreadTerminate(NULL);
   /* USER CODE END StartWorkerTask2 */
 }
 
@@ -360,11 +370,15 @@ void StartWorkerTask2(void *argument)
 void StartWorkerTask3(void *argument)
 {
   /* USER CODE BEGIN StartWorkerTask3 */
+    uint8_t extra_stack_use[15];
+    UNUSED(extra_stack_use);
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	  recursive_factorial(19);
+	  osDelay(100);
   }
+  osThreadTerminate(NULL);
   /* USER CODE END StartWorkerTask3 */
 }
 
@@ -378,11 +392,23 @@ void StartWorkerTask3(void *argument)
 void StartWatcherTask(void *argument)
 {
   /* USER CODE BEGIN StartWatcherTask */
+
+	osThreadAttr_t 	thread_attribute	[NUMB_WORKER_TASKS]			= {WorkerTask1_attributes, WorkerTask2_attributes, WorkerTask3_attributes};
+	osThreadId_t 	thread_id			[NUMB_WORKER_TASKS] 		= {WorkerTask1Handle, WorkerTask2Handle, WorkerTask3Handle};
+  	uint32_t 		free_stack_size		[NUMB_WORKER_TASKS] 		= {0, 0, 0};
+
+
+
+
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+
+	  get_stack_size	(thread_id		, free_stack_size,	 NUMB_WORKER_TASKS);
+	  print_stack_size	(free_stack_size, thread_attribute,	 NUMB_WORKER_TASKS, huart2);
+	  osDelay	(500);
   }
+  osThreadTerminate(NULL);
   /* USER CODE END StartWatcherTask */
 }
 
