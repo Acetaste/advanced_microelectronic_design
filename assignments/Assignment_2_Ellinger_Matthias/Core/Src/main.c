@@ -446,7 +446,7 @@ void StartConsumerTask(void *argument)
 		xSemaphoreTake(SemVal2Handle,100);
 		if(data.val_p2%2 == 0)
 		{
-			printf(data.str_p2, "This message belongs to aircraft Airbus A350 flight number GFIK42. The current value of sensor 2 reads  %d",data.val_p2/2 );
+			sprintf(data.str_p2, "This message belongs to aircraft Airbus A350 flight number GFIK42. The current value of sensor 2 reads  %d",data.val_p2/2 );
 		}
 		xSemaphoreGive(SemVal2Handle);
 		osDelay(500);
