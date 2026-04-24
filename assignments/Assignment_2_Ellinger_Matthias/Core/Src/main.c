@@ -18,10 +18,12 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "output.h"
+#include "semphr.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,14 +44,60 @@
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart2;
 
+/* Definitions for OutputTask */
+osThreadId_t OutputTaskHandle;
+const osThreadAttr_t OutputTask_attributes = {
+  .name = "OutputTask",
+  .stack_size = 512 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
+/* Definitions for ProducerTask1 */
+osThreadId_t ProducerTask1Handle;
+const osThreadAttr_t ProducerTask1_attributes = {
+  .name = "ProducerTask1",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for ProducerTask2 */
+osThreadId_t ProducerTask2Handle;
+const osThreadAttr_t ProducerTask2_attributes = {
+  .name = "ProducerTask2",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for ConsumerTask */
+osThreadId_t ConsumerTaskHandle;
+const osThreadAttr_t ConsumerTask_attributes = {
+  .name = "ConsumerTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
+/* Definitions for SemVal1 */
+osSemaphoreId_t SemVal1Handle;
+const osSemaphoreAttr_t SemVal1_attributes = {
+  .name = "SemVal1"
+};
+/* Definitions for SemVal2 */
+osSemaphoreId_t SemVal2Handle;
+const osSemaphoreAttr_t SemVal2_attributes = {
+  .name = "SemVal2"
+};
 /* USER CODE BEGIN PV */
-
+struct _data data = {	.val_p1 = 0,
+						.str_p1 = {"This is a test message to show the importance of task synchronisation. The current value of sensor 1 reads 0"},
+						.val_p2 = 0,
+						.str_p2 = {"This message belongs to aircraft Airbus A350 flight number GFIK42. The current value of sensor 2 reads 0"}};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
+void StartOutputTask(void *argument);
+void StartProducerTask1(void *argument);
+void StartProducerTask2(void *argument);
+void StartConsumerTask(void *argument);
+
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -92,6 +140,58 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
+
+  /* Init scheduler */
+  osKernelInitialize();
+
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* Create the semaphores(s) */
+  /* creation of SemVal1 */
+  SemVal1Handle = osSemaphoreNew(1, 1, &SemVal1_attributes);
+
+  /* creation of SemVal2 */
+  SemVal2Handle = osSemaphoreNew(1, 1, &SemVal2_attributes);
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* creation of OutputTask */
+  OutputTaskHandle = osThreadNew(StartOutputTask, NULL, &OutputTask_attributes);
+
+  /* creation of ProducerTask1 */
+  ProducerTask1Handle = osThreadNew(StartProducerTask1, NULL, &ProducerTask1_attributes);
+
+  /* creation of ProducerTask2 */
+  ProducerTask2Handle = osThreadNew(StartProducerTask2, NULL, &ProducerTask2_attributes);
+
+  /* creation of ConsumerTask */
+  ConsumerTaskHandle = osThreadNew(StartConsumerTask, NULL, &ConsumerTask_attributes);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
+
+  /* Start scheduler */
+  osKernelStart();
+
+  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -234,6 +334,123 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
+
+/* USER CODE BEGIN Header_StartOutputTask */
+/**
+  * @brief  Function implementing the OutputTask thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartOutputTask */
+void StartOutputTask(void *argument)
+{
+  /* USER CODE BEGIN 5 */
+  /* Infinite loop */
+  for(;;)
+  {
+	  xSemaphoreTake(SemVal1Handle,100);
+	  xSemaphoreTake(SemVal2Handle,100);
+	  output_data(data,huart2);
+	  xSemaphoreGive(SemVal2Handle);
+	  xSemaphoreGive(SemVal1Handle);
+	  osDelay(500);
+  }
+  /* USER CODE END 5 */
+}
+
+/* USER CODE BEGIN Header_StartProducerTask1 */
+/**
+* @brief Function implementing the ProducerTask1 thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartProducerTask1 */
+void StartProducerTask1(void *argument)
+{
+  /* USER CODE BEGIN StartProducerTask1 */
+  /* Infinite loop */
+  for(;;)
+  {
+	  xSemaphoreTake(SemVal1Handle,100);
+	  data.val_p1 +=1;
+	  xSemaphoreGive(SemVal1Handle);
+	  osDelay(500);
+  }
+  /* USER CODE END StartProducerTask1 */
+}
+
+/* USER CODE BEGIN Header_StartProducerTask2 */
+/**
+* @brief Function implementing the ProducerTask2 thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartProducerTask2 */
+void StartProducerTask2(void *argument)
+{
+  /* USER CODE BEGIN StartProducerTask2 */
+  /* Infinite loop */
+  for(;;)
+  {
+	  xSemaphoreTake(SemVal2Handle,100);
+	  data.val_p2 +=1;
+	  xSemaphoreGive(SemVal2Handle);
+	  osDelay(500);
+  }
+  /* USER CODE END StartProducerTask2 */
+}
+
+/* USER CODE BEGIN Header_StartConsumerTask */
+/**
+* @brief Function implementing the ConsumerTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartConsumerTask */
+void StartConsumerTask(void *argument)
+{
+  /* USER CODE BEGIN StartConsumerTask */
+  /* Infinite loop */
+  for(;;)
+  {
+	  xSemaphoreTake(SemVal1Handle,100);
+	  if(data.val_p1%2 == 0)
+	  {
+		  sprintf(data.str_p1, "This is a test message to show the importance of task synchronisation. The current value of sensor 1 reads %d",data.val_p1/2 );
+	  }
+	  xSemaphoreGive(SemVal1Handle);
+	  xSemaphoreTake(SemVal2Handle,100);
+	  if(data.val_p2%2 == 0)
+	  {
+	  	  sprintf(data.str_p2, "This message belongs to aircraft Airbus A350 flight number GFIK42. The current value of sensor 2 reads  %d",data.val_p2/2 );
+	  }
+	  xSemaphoreGive(SemVal2Handle);
+	  osDelay(500);
+  }
+  /* USER CODE END StartConsumerTask */
+}
+
+/**
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM6 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
+  * @retval None
+  */
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  /* USER CODE BEGIN Callback 0 */
+
+  /* USER CODE END Callback 0 */
+  if (htim->Instance == TIM6)
+  {
+    HAL_IncTick();
+  }
+  /* USER CODE BEGIN Callback 1 */
+
+  /* USER CODE END Callback 1 */
+}
 
 /**
   * @brief  This function is executed in case of error occurrence.
