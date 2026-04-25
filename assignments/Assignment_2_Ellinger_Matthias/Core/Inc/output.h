@@ -11,12 +11,12 @@
 #include "stm32l4xx_hal.h"
 #include <stdio.h>
 
-struct _data {
+typedef struct {
   int val_p1;
-  char str_p1[120];
+  char str_p1[150];
   int val_p2;
-  char str_p2[120];};
+  char str_p2[150];}_data;
 
-void output_data(struct _data data, UART_HandleTypeDef uart_handle);
+void output_data(_data* data, UART_HandleTypeDef uart_handle);
 
 #endif /* INC_OUTPUT_H_ */

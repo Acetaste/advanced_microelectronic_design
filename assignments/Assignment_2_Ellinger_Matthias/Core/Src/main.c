@@ -33,7 +33,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+
 #define PROTECTED
+
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -83,10 +87,7 @@ const osSemaphoreAttr_t SemVal2_attributes = {
   .name = "SemVal2"
 };
 /* USER CODE BEGIN PV */
-struct _data data = {	.val_p1 = 0,
-						.str_p1 = {"This is a test message to show the importance of task synchronisation. The current value of sensor 1 reads 0"},
-						.val_p2 = 0,
-						.str_p2 = {"This message belongs to aircraft Airbus A350 flight number GFIK42. The current value of sensor 2 reads 0"}};
+_data* data;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -138,7 +139,11 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  data = pvPortMalloc(sizeof(_data));
+  data ->val_p1 = 0;
+  sprintf(data ->str_p1,"This is a test message to show the importance of task synchronisation. The current value of sensor 1 reads 0");
+  data ->val_p2 = 0;
+  sprintf(data ->str_p2,"This message belongs to aircraft Airbus A350 flight number GFIK42. The current value of sensor 2 reads 0");
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -359,9 +364,11 @@ void StartOutputTask(void *argument)
 
 	#ifndef PROTECTED
 		output_data(data,huart2);
+		osDelay(500);
 	#endif
 
   }
+  osThreadTerminate(NULL);
   /* USER CODE END 5 */
 }
 
@@ -380,18 +387,19 @@ void StartProducerTask1(void *argument)
   {
 	#ifdef PROTECTED
 		xSemaphoreTake(SemVal1Handle,100);
-		data.val_p1 +=1;
+		data->val_p1 +=1;
 		xSemaphoreGive(SemVal1Handle);
 		osDelay(300);
 	#endif
 
 	#ifndef PROTECTED
-		data.val_p1 +=1;
+		data->val_p1 +=1;
 		osDelay(300);
 	#endif
 
 
   }
+  osThreadTerminate(NULL);
   /* USER CODE END StartProducerTask1 */
 }
 
@@ -410,16 +418,17 @@ void StartProducerTask2(void *argument)
   {
 	#ifdef PROTECTED
 		xSemaphoreTake(SemVal2Handle,100);
-		data.val_p2 +=1;
+		data->val_p2 +=1;
 		xSemaphoreGive(SemVal2Handle);
 		osDelay(500);
 	#endif
 
 	#ifndef PROTECTED
-		data.val_p2 +=1;
+		data->val_p2 +=1;
 		osDelay(500);
 	#endif
   }
+  osThreadTerminate(NULL);
   /* USER CODE END StartProducerTask2 */
 }
 
@@ -438,33 +447,38 @@ void StartConsumerTask(void *argument)
   {
 	#ifdef PROTECTED
 		xSemaphoreTake(SemVal1Handle,100);
-		if(data.val_p1%2 == 0)
+		if(data->val_p1%2 == 0)
 		{
-			sprintf(data.str_p1, "This is a test message to show the importance of task synchronisation. The current value of sensor 1 reads %d",data.val_p1/2 );
+			osDelay(100);
+			sprintf(data->str_p1, "This is a test message to show the importance of task synchronisation. The current value of sensor 1 reads %d.%d",data->val_p1/2,(data->val_p1%2)*5);
 		}
 		xSemaphoreGive(SemVal1Handle);
 		xSemaphoreTake(SemVal2Handle,100);
-		if(data.val_p2%2 == 0)
+		if(data->val_p2%2 == 0)
 		{
-			sprintf(data.str_p2, "This message belongs to aircraft Airbus A350 flight number GFIK42. The current value of sensor 2 reads  %d",data.val_p2/2 );
+			osDelay(100);
+			sprintf(data->str_p2, "This message belongs to aircraft Airbus A350 flight number GFIK42. The current value of sensor 2 reads  %d.%d",data->val_p2/2, (data->val_p2%2)*5 );
 		}
 		xSemaphoreGive(SemVal2Handle);
-		osDelay(500);
+		osDelay(100);
 	#endif
 
 	#ifndef PROTECTED
-		if(data.val_p1%2 == 0)
-		{
-			sprintf(data.str_p1, "This is a test message to show the importance of task synchronisation. The current value of sensor 1 reads %d",data.val_p1/2 );
-		}
-		if(data.val_p2%2 == 0)
-		{
-			printf(data.str_p2, "This message belongs to aircraft Airbus A350 flight number GFIK42. The current value of sensor 2 reads  %d",data.val_p2/2 );
-		}
-		osDelay(500);
+		if(data->val_p1%2 == 0)
+				{
+					osDelay(100);
+					sprintf(data->str_p1, "This is a test message to show the importance of task synchronisation. The current value of sensor 1 reads %d.%d",data->val_p1/2,(data->val_p1%2)*5);
+				}
+		if(data->val_p2%2 == 0)
+				{
+					osDelay(100);
+					sprintf(data->str_p2, "This message belongs to aircraft Airbus A350 flight number GFIK42. The current value of sensor 2 reads  %d.%d",data->val_p2/2, (data->val_p2%2)*5 );
+				}
+		osDelay(100);
 	#endif
 
   }
+  osThreadTerminate(NULL);
   /* USER CODE END StartConsumerTask */
 }
 
