@@ -2,10 +2,10 @@
 CAD.formats=
 CAD.pinconfig=
 CAD.provider=
-FREERTOS.BinarySemaphores01=uartSem,Static,uartSemControlBlock,Available
+FREERTOS.BinarySemaphores01=TaskSettingsSem,Static,uartSemControlBlock,Available
 FREERTOS.FootprintOK=true
 FREERTOS.IPParameters=Tasks01,configUSE_NEWLIB_REENTRANT,FootprintOK,Queues01,BinarySemaphores01
-FREERTOS.Queues01=producerQueue1,16,uint16_t,0,Static,producerQueue1Buffer,producerQueue1ControlBlock;producerQueue2,16,uint16_t,0,Static,producerQueue2Buffer,producerQueue2ControlBlock;producerQueue3,16,uint16_t,0,Static,producerQueue3Buffer,producerQueue3ControlBlock
+FREERTOS.Queues01=producerQueue,16,uint16_t,0,Static,producerQueue1Buffer,producerQueue1ControlBlock
 FREERTOS.Tasks01=monitorTask,24,512,StartmonitorTask,Default,NULL,Static,monitorTaskBuffer,monitorTaskControlBlock;producerTask1,8,128,StartproducerTask1,Default,NULL,Static,producerTask1Buffer,producerTask1ControlBlock;producerTask2,8,128,StartproducerTask2,Default,NULL,Static,producerTask2Buffer,producerTask2ControlBlock;producerTask3,8,128,StartproducerTask3,Default,NULL,Static,producerTask3Buffer,producerTask3ControlBlock
 FREERTOS.configUSE_NEWLIB_REENTRANT=1
 File.Version=6
@@ -185,3 +185,4 @@ VP_SYS_VS_tim6.Mode=TIM6
 VP_SYS_VS_tim6.Signal=SYS_VS_tim6
 board=NUCLEO-L432KC
 boardIOC=true
+rtos.0.ip=FREERTOS

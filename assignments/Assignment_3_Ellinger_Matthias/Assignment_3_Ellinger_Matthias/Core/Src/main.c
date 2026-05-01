@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "semphr.h"
+#include "prod_struct.h"
 #include <stdio.h>
 /* USER CODE END Includes */
 
@@ -39,6 +40,7 @@ typedef StaticSemaphore_t osStaticSemaphoreDef_t;
 #define UART_IT_BLOCKED_MSG "Uart buffer currently blocked, input not read\n"
 #define BLOCKED_MSG_LEN sizeof(UART_IT_BLOCKED_MSG)
 #define UART_RECEIVE_BUFFER_SIZE 15
+#define NUMB_PROD_TASK 3
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -97,51 +99,32 @@ const osThreadAttr_t producerTask3_attributes = {
   .stack_size = sizeof(producerTask3Buffer),
   .priority = (osPriority_t) osPriorityLow,
 };
-/* Definitions for producerQueue1 */
-osMessageQueueId_t producerQueue1Handle;
+/* Definitions for producerQueue */
+osMessageQueueId_t producerQueueHandle;
 uint8_t producerQueue1Buffer[ 16 * sizeof( uint16_t ) ];
 osStaticMessageQDef_t producerQueue1ControlBlock;
-const osMessageQueueAttr_t producerQueue1_attributes = {
-  .name = "producerQueue1",
+const osMessageQueueAttr_t producerQueue_attributes = {
+  .name = "producerQueue",
   .cb_mem = &producerQueue1ControlBlock,
   .cb_size = sizeof(producerQueue1ControlBlock),
   .mq_mem = &producerQueue1Buffer,
   .mq_size = sizeof(producerQueue1Buffer)
 };
-/* Definitions for producerQueue2 */
-osMessageQueueId_t producerQueue2Handle;
-uint8_t producerQueue2Buffer[ 16 * sizeof( uint16_t ) ];
-osStaticMessageQDef_t producerQueue2ControlBlock;
-const osMessageQueueAttr_t producerQueue2_attributes = {
-  .name = "producerQueue2",
-  .cb_mem = &producerQueue2ControlBlock,
-  .cb_size = sizeof(producerQueue2ControlBlock),
-  .mq_mem = &producerQueue2Buffer,
-  .mq_size = sizeof(producerQueue2Buffer)
-};
-/* Definitions for producerQueue3 */
-osMessageQueueId_t producerQueue3Handle;
-uint8_t producerQueue3Buffer[ 16 * sizeof( uint16_t ) ];
-osStaticMessageQDef_t producerQueue3ControlBlock;
-const osMessageQueueAttr_t producerQueue3_attributes = {
-  .name = "producerQueue3",
-  .cb_mem = &producerQueue3ControlBlock,
-  .cb_size = sizeof(producerQueue3ControlBlock),
-  .mq_mem = &producerQueue3Buffer,
-  .mq_size = sizeof(producerQueue3Buffer)
-};
-/* Definitions for uartSem */
-osSemaphoreId_t uartSemHandle;
+/* Definitions for TaskSettingsSem */
+osSemaphoreId_t TaskSettingsSemHandle;
 osStaticSemaphoreDef_t uartSemControlBlock;
-const osSemaphoreAttr_t uartSem_attributes = {
-  .name = "uartSem",
+const osSemaphoreAttr_t TaskSettingsSem_attributes = {
+  .name = "TaskSettingsSem",
   .cb_mem = &uartSemControlBlock,
   .cb_size = sizeof(uartSemControlBlock),
 };
 /* USER CODE BEGIN PV */
-static int uart_receive_index;
-static uint8_t uart_receive_buffer[UART_RECEIVE_BUFFER_SIZE];
-static uint8_t new_uart_input_flag = 0;
+static int 					uart_receive_index;
+static volatile uint8_t 	uart_receive_char								= '\0';
+static volatile uint8_t 	uart_receive_buffer[UART_RECEIVE_BUFFER_SIZE]	= {0};
+static uint8_t				new_uart_input_flag 							= 0;
+static uint8_t				uart_overflow_flag 								= 0;
+static unsigned int 		task_delay_array[NUMB_PROD_TASK] 				={1000,5000,10000};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -204,8 +187,8 @@ int main(void)
   /* USER CODE END RTOS_MUTEX */
 
   /* Create the semaphores(s) */
-  /* creation of uartSem */
-  uartSemHandle = osSemaphoreNew(1, 1, &uartSem_attributes);
+  /* creation of TaskSettingsSem */
+  TaskSettingsSemHandle = osSemaphoreNew(1, 1, &TaskSettingsSem_attributes);
 
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
@@ -216,14 +199,8 @@ int main(void)
   /* USER CODE END RTOS_TIMERS */
 
   /* Create the queue(s) */
-  /* creation of producerQueue1 */
-  producerQueue1Handle = osMessageQueueNew (16, sizeof(uint16_t), &producerQueue1_attributes);
-
-  /* creation of producerQueue2 */
-  producerQueue2Handle = osMessageQueueNew (16, sizeof(uint16_t), &producerQueue2_attributes);
-
-  /* creation of producerQueue3 */
-  producerQueue3Handle = osMessageQueueNew (16, sizeof(uint16_t), &producerQueue3_attributes);
+  /* creation of producerQueue */
+  producerQueueHandle = osMessageQueueNew (16, sizeof(uint16_t), &producerQueue_attributes);
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
@@ -396,27 +373,28 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-
-	/*if(xSemaphoreTakeFromISR(uartSemHandle,NULL)== pdTRUE)
-	{*/
-
-		if(uart_receive_buffer[uart_receive_index] == '\0')
-		{
-			new_uart_input_flag = 1;
-			uart_receive_index = 0;
-		}
-		else
-		{
-			uart_receive_index++;
-		}
-		HAL_UART_Receive_IT(huart, &(uart_receive_buffer[uart_receive_index]), 1);
-		/*xSemaphoreGiveFromISR(uartSemHandle,NULL);
-	}
-	else
+	if(huart-> Instance == USART2)
 	{
-		HAL_UART_Transmit_IT(&huart2, UART_IT_BLOCKED_MSG, BLOCKED_MSG_LEN);
+		if((new_uart_input_flag == 0) && (uart_overflow_flag == 0))
+		{
+			if(uart_receive_char == '\0')
+			{
+				uart_receive_buffer[uart_receive_index] = uart_receive_char;
+				new_uart_input_flag = 1;
+			}
+			else if(uart_receive_index < UART_RECEIVE_BUFFER_SIZE-1)
+			{
+				uart_receive_buffer[uart_receive_index] = uart_receive_char;
+				uart_receive_index++;
+			}
+			else
+			{
+				uart_overflow_flag = 1;
+
+			}
+		}
+		HAL_UART_Receive_IT(&huart2,(uint8_t*) &uart_receive_char, 1);
 	}
-	*/
 
 
 
@@ -433,43 +411,59 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 void StartmonitorTask(void *argument)
 {
   /* USER CODE BEGIN 5 */
-	uint8_t local_uart_receive_buffer[UART_RECEIVE_BUFFER_SIZE];
-	uint8_t uart_transmit_buffer[100] = {0};
+	uint8_t uart_transmit_buffer[150] = {0};
 	int buffer_len = 0;
+	unsigned int task_index = 0;
+	unsigned int task_delay = 0;
+	prod_struct buffer_struct = {.index = 0, .value = 0};
+	buffer_len = sprintf((char*) uart_transmit_buffer,"Monitor Task started\n");
+	HAL_UART_Transmit(&huart2, uart_transmit_buffer, buffer_len, HAL_MAX_DELAY);
+	HAL_UART_Receive_IT(&huart2, (uint8_t*) &uart_receive_char, 1);
+	/* Infinite loop */
+	for(;;)
+	{
+		if(uart_overflow_flag == 1)
+		{
+			  uart_overflow_flag = 0;
+			  uart_receive_index = 0;
+			  buffer_len = sprintf((char*) uart_transmit_buffer,"Uart message was bigger than buffer(%d chars), message not interpreted. Try again!\n", UART_RECEIVE_BUFFER_SIZE);
+			  HAL_UART_Transmit(&huart2, uart_transmit_buffer, buffer_len, HAL_MAX_DELAY);
 
-	  buffer_len = sprintf((char*) uart_transmit_buffer,"Monitor Task Started\n");
-	  HAL_UART_Transmit(&huart2, uart_transmit_buffer, buffer_len, HAL_MAX_DELAY);
-
-	  HAL_UART_Receive_IT(&huart2, uart_receive_buffer, 1);
-	  uart_receive_index++;
-
-
-  /* Infinite loop */
-  for(;;)
-  {
-	  if(new_uart_input_flag == 1)
-	  {
-		  new_uart_input_flag = 0;
-		  //xSemaphoreTake(uartSemHandle,0);
-		  for(int i =0; i< UART_RECEIVE_BUFFER_SIZE; i++)
-		  {
-			  local_uart_receive_buffer[i] = uart_receive_buffer[i];
-			  if(local_uart_receive_buffer[i] == '\0')
-			  {
-				  break;
-			  }
-		  }
-		  //xSemaphoreGive(uartSemHandle);
-		  buffer_len = sprintf((char*) uart_transmit_buffer,"%s",(char*) local_uart_receive_buffer);
-		  HAL_UART_Transmit(&huart2, uart_transmit_buffer, buffer_len, HAL_MAX_DELAY);
+		}
 
 
+		if(new_uart_input_flag == 1)
+		{
+			new_uart_input_flag = 0;
+			uart_receive_index = 0;
 
-	  }
+			buffer_len = sprintf((char*) uart_transmit_buffer,"Read in: \"%s\". Ready for new input\n",(char*) uart_receive_buffer);
+			HAL_UART_Transmit(&huart2, uart_transmit_buffer, buffer_len, HAL_MAX_DELAY);
 
 
-    osDelay(100);
-  }
+			if(sscanf((char*) uart_receive_buffer, "T%u %ums", &task_index, &task_delay)==2)
+			{
+				buffer_len = sprintf((char*)uart_transmit_buffer,"task number: %u, task delay: %u\n", task_index, task_delay);
+				HAL_UART_Transmit(&huart2, uart_transmit_buffer, buffer_len, 100);
+				xSemaphoreTake(TaskSettingsSemHandle, HAL_MAX_DELAY);
+				task_delay_array[task_index-1] = task_delay;
+				xSemaphoreGive(TaskSettingsSemHandle);
+
+			}
+			else
+			{
+				buffer_len = sprintf((char*)uart_transmit_buffer,"wrong format, expected task number and task delay space separated\n");
+				HAL_UART_Transmit(&huart2, uart_transmit_buffer, buffer_len, 100);
+			}
+		}
+		while(xQueueReceive(producerQueueHandle, &buffer_struct, 0)!=errQUEUE_EMPTY)
+		{
+			buffer_len = sprintf((char*)uart_transmit_buffer,"New Value : %hu received by task: %hu\n",buffer_struct.value,buffer_struct.index+1);
+			HAL_UART_Transmit(&huart2, uart_transmit_buffer, buffer_len, 100);
+		}
+		osDelay(1);
+	}
+	osThreadTerminate(NULL);
   /* USER CODE END 5 */
 }
 
@@ -483,10 +477,17 @@ void StartmonitorTask(void *argument)
 void StartproducerTask1(void *argument)
 {
   /* USER CODE BEGIN StartproducerTask1 */
+	unsigned int task1delay = 100;
+	prod_struct task1_struct = {.index = 0, .value = 0};
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	  xSemaphoreTake(TaskSettingsSemHandle, HAL_MAX_DELAY);
+	  task1delay = task_delay_array[0];
+	  xSemaphoreGive(TaskSettingsSemHandle);
+	  xQueueSend(producerQueueHandle,&task1_struct,0);
+	  task1_struct.value++;
+	  osDelay(task1delay);
   }
   /* USER CODE END StartproducerTask1 */
 }
@@ -501,10 +502,17 @@ void StartproducerTask1(void *argument)
 void StartproducerTask2(void *argument)
 {
   /* USER CODE BEGIN StartproducerTask2 */
+	unsigned int task2delay = 100;
+	prod_struct task2_struct = {.index = 1, .value = 0};
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	  xSemaphoreTake(TaskSettingsSemHandle, HAL_MAX_DELAY);
+	  task2delay = task_delay_array[1];
+	  xSemaphoreGive(TaskSettingsSemHandle);
+	  xQueueSend(producerQueueHandle,&task2_struct,0);
+	  task2_struct.value++;
+	  osDelay(task2delay);
   }
   /* USER CODE END StartproducerTask2 */
 }
@@ -519,10 +527,17 @@ void StartproducerTask2(void *argument)
 void StartproducerTask3(void *argument)
 {
   /* USER CODE BEGIN StartproducerTask3 */
+	unsigned int task3delay = 100;
+	prod_struct task3_struct = {.index = 2, .value = 0};
   /* Infinite loop */
   for(;;)
   {
-    osDelay(1);
+	  xSemaphoreTake(TaskSettingsSemHandle, HAL_MAX_DELAY);
+	  task3delay = task_delay_array[2];
+	  xSemaphoreGive(TaskSettingsSemHandle);
+	  xQueueSend(producerQueueHandle,&task3_struct,0);
+	  task3_struct.value++;
+	  osDelay(task3delay);
   }
   /* USER CODE END StartproducerTask3 */
 }
