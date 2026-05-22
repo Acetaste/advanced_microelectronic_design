@@ -57,7 +57,7 @@ DMA_HandleTypeDef hdma_usart2_rx;
 osThreadId_t MonitorTaskHandle;
 const osThreadAttr_t MonitorTask_attributes = {
   .name = "MonitorTask",
-  .stack_size = 1500 * 4,
+  .stack_size = 1200 * 4,
   .priority = (osPriority_t) osPriorityAboveNormal,
 };
 /* Definitions for UARTTask */
@@ -429,8 +429,7 @@ void StartMonitorTask(void *argument)
 		  switch (command_struct.UART_command_ID)
 		  {
 		  case CREATE:
-			  buffer_len = sprintf((char*) uart_transmit_buffer,"New create command\n");
-			  HAL_UART_Transmit(&huart2, uart_transmit_buffer, buffer_len, HAL_MAX_DELAY);
+
 			  for(thread_index = 0; (thread_info_array[thread_index].status != DEAD_TASK) || (thread_info_array[thread_index].time_alive != 0); thread_index++)
 			  {
 				  if(thread_index >= 255)
@@ -451,6 +450,8 @@ void StartMonitorTask(void *argument)
 				  producer_struct.producer_ID 					= thread_index;
 				  producer_struct.production_delay 				= command_struct.delay;
 				  thread_info_array[thread_index].thread_ID		= osThreadNew(StartProducerTask, &producer_struct, &ProducerTask_attributes);
+				  buffer_len = sprintf((char*) uart_transmit_buffer,"Created Task %u\n",thread_index);
+				  HAL_UART_Transmit(&huart2, uart_transmit_buffer, buffer_len, HAL_MAX_DELAY);
 				  if (thread_info_array[thread_index].thread_ID != NULL)
 				  {
 					  thread_info_array[thread_index].status			= ALIVE_TASK;
@@ -464,6 +465,8 @@ void StartMonitorTask(void *argument)
 			  break;
 
 		  case DELETE:
+			  buffer_len = sprintf((char*) uart_transmit_buffer,"Delete Task : %u\n", command_struct.thread_ID);
+			  HAL_UART_Transmit(&huart2, uart_transmit_buffer, buffer_len, HAL_MAX_DELAY);
 			  if(thread_info_array[command_struct.thread_ID].status == ALIVE_TASK)
 			  {
 				  if(osThreadTerminate(thread_info_array[command_struct.thread_ID].thread_ID)==osOK)
@@ -495,7 +498,7 @@ void StartMonitorTask(void *argument)
 	  if(msg_struct.msg_ID == SPECIFIC_TASK)
 	  {
 		  msg_struct.data2 = thread_info_array[msg_struct.data1].production_rate;
-		  msg_struct.data3 = ((uint32_t) xTaskGetTickCount)-thread_info_array[msg_struct.data1].time_alive;
+		  msg_struct.data3 = ((uint32_t) xTaskGetTickCount())-thread_info_array[msg_struct.data1].time_alive;
 	  }
 	  else
 	  {
@@ -531,10 +534,11 @@ void StartUARTTask(void *argument)
 
 	uint8_t rxBuf[UART_RX_BUF_SIZE] = {0};
 	uint8_t txBuf[UART_TX_BUF_SIZE] = {0};
+	uint16_t i = 0;
 	int len =0;
-	uint16_t old_pos 				= 0;
-	uint16_t pos	 				= 0;
-	HAL_UART_Receive_DMA(&huart2, rxBuf, UART_RX_BUF_SIZE);
+	int16_t old_pos 				= -1;
+	int16_t pos	 					= 0;
+	HAL_UART_Receive_DMA(&huart1, rxBuf, UART_RX_BUF_SIZE);
 
 
 
@@ -552,7 +556,7 @@ void StartUARTTask(void *argument)
 
 			if (pos >= old_pos+4)
 			{
-				len = sprintf(txBuf,"new Data\n");
+				len = sprintf((char*)txBuf,"new Data\n");
 				HAL_UART_Transmit(&huart2, txBuf, len, HAL_MAX_DELAY);
 
 				//normal case
@@ -562,7 +566,7 @@ void StartUARTTask(void *argument)
 				UART_struct.delay = (rxBuf[old_pos+3]<<8)|rxBuf[old_pos+4];
 				old_pos += 4;
 				xQueueSend(UARTcommandQueueHandle,&UART_struct,0);
-				len = sprintf((char*) txBuf,"New uart command: %u,%xu,%xu\n", UART_struct.UART_command_ID), UART_struct.thread_ID,UART_struct.delay ;
+				len = sprintf((char*) txBuf,"New uart command: %hu\n", UART_struct.UART_command_ID) ;
 				HAL_UART_Transmit(&huart2, txBuf, len, HAL_MAX_DELAY);
 
 			}
@@ -571,7 +575,7 @@ void StartUARTTask(void *argument)
 				UART_struct.UART_command_ID = rxBuf[((old_pos+1)<50)?(old_pos+1):(old_pos+1-UART_RX_BUF_SIZE)];
 				UART_struct.thread_ID 		= rxBuf[((old_pos+2)<50)?(old_pos+2):(old_pos+2-UART_RX_BUF_SIZE)];
 				UART_struct.delay = (rxBuf[((old_pos+3)<50)?(old_pos+3):(old_pos+3-UART_RX_BUF_SIZE)]<<8)|rxBuf[((old_pos+4)<50)?(old_pos+4):(old_pos+4-UART_RX_BUF_SIZE)];
-				old_pos += 4;
+				((old_pos+4)<50)?(old_pos = old_pos + 4):(old_pos =old_pos+4-UART_RX_BUF_SIZE);
 				xQueueSend(UARTcommandQueueHandle,&UART_struct,0);
 			}
 
@@ -583,13 +587,15 @@ void StartUARTTask(void *argument)
 		while(xQueueReceive(monitorQueueHandle, &monitor_struct, 0)!=errQUEUE_EMPTY)
 		{
 			monitor_struct_to_uint8(monitor_struct,txBuf);
-			HAL_UART_Transmit(&huart2, txBuf, sizeof(monitor_struct), 0);
+			HAL_UART_Transmit(&huart1, txBuf, sizeof(struct monitor_msg), 100);
 
 		}
-		while(xQueueReceive(producerQueueHandle, &producer_struct, 0)!=errQUEUE_EMPTY)
+		i=0;
+		while((xQueueReceive(producerQueueHandle, &producer_struct, 0)!=errQUEUE_EMPTY)&& i <500)
 		{
 			producer_struct_to_uint8(producer_struct,txBuf);
-			HAL_UART_Transmit(&huart2, txBuf, sizeof(producer_struct), 0);
+			HAL_UART_Transmit(&huart1, txBuf, sizeof(struct producer_msg), 100);
+			i++;
 		}
 
 
