@@ -17,7 +17,7 @@ void StartProducerTask(void* argument)
 	for(;;)
 	{
 
-
+		production_value++;
 		osDelay(delay);
 	}
 	osThreadTerminate(NULL);
