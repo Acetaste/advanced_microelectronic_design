@@ -27,6 +27,8 @@
 #include "UART_task.h"
 #include "queue.h"
 #include <stdio.h>
+#include "semphr.h"
+
 
 /* USER CODE END Includes */
 
@@ -38,7 +40,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define UART_RX_BUF_SIZE 50
-#define UART_TX_BUF_SIZE 50
+#define UART_TX_BUF_SIZE 150
 
 /* USER CODE END PD */
 
@@ -67,6 +69,13 @@ const osThreadAttr_t UARTTask_attributes = {
   .stack_size = 600 * 4,
   .priority = (osPriority_t) osPriorityNormal,
 };
+/* Definitions for GreenLEDTAsk */
+osThreadId_t GreenLEDTAskHandle;
+const osThreadAttr_t GreenLEDTAsk_attributes = {
+  .name = "GreenLEDTAsk",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityLow,
+};
 /* Definitions for producerQueue */
 osMessageQueueId_t producerQueueHandle;
 const osMessageQueueAttr_t producerQueue_attributes = {
@@ -82,6 +91,11 @@ osMessageQueueId_t UARTcommandQueueHandle;
 const osMessageQueueAttr_t UARTcommandQueue_attributes = {
   .name = "UARTcommandQueue"
 };
+/* Definitions for LedSemaphore */
+osSemaphoreId_t LedSemaphoreHandle;
+const osSemaphoreAttr_t LedSemaphore_attributes = {
+  .name = "LedSemaphore"
+};
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -94,6 +108,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
 void StartMonitorTask(void *argument);
 void StartUARTTask(void *argument);
+void StartGreenLEDTask(void *argument);
 
 /* USER CODE BEGIN PFP */
 
@@ -147,6 +162,10 @@ int main(void)
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
 
+  /* Create the semaphores(s) */
+  /* creation of LedSemaphore */
+  LedSemaphoreHandle = osSemaphoreNew(4, 0, &LedSemaphore_attributes);
+
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
@@ -175,6 +194,9 @@ int main(void)
 
   /* creation of UARTTask */
   UARTTaskHandle = osThreadNew(StartUARTTask, NULL, &UARTTask_attributes);
+
+  /* creation of GreenLEDTAsk */
+  GreenLEDTAskHandle = osThreadNew(StartGreenLEDTask, NULL, &GreenLEDTAsk_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
   /* add threads, ... */
@@ -460,6 +482,11 @@ void StartMonitorTask(void *argument)
 				  }
 
 			  }
+			  else
+			  {
+				  thread_full_flag = 0;
+				  xSemaphoreGive(LedSemaphoreHandle);
+			  }
 			  msg_struct.msg_ID = SPECIFIC_TASK;
 			  msg_struct.data1  = thread_index;
 			  break;
@@ -474,8 +501,13 @@ void StartMonitorTask(void *argument)
 					  thread_info_array[command_struct.thread_ID].status			= DEAD_TASK;
 					  thread_info_array[command_struct.thread_ID].production_rate	= 0;
 					  thread_info_array[command_struct.thread_ID].time_alive		= ((uint32_t)xTaskGetTickCount())-thread_info_array[thread_index].time_alive;
-					  thread_info_array[command_struct.thread_ID].thread_ID		= 0;
+					  thread_info_array[command_struct.thread_ID].thread_ID			= 0;
 				  }
+
+			  }
+			  else if(thread_info_array[command_struct.thread_ID].status == DEAD_TASK)
+			  {
+				  thread_info_array[command_struct.thread_ID].time_alive = 0;
 
 			  }
 			  msg_struct.msg_ID = SPECIFIC_TASK;
@@ -498,7 +530,14 @@ void StartMonitorTask(void *argument)
 	  if(msg_struct.msg_ID == SPECIFIC_TASK)
 	  {
 		  msg_struct.data2 = thread_info_array[msg_struct.data1].production_rate;
-		  msg_struct.data3 = ((uint32_t) xTaskGetTickCount())-thread_info_array[msg_struct.data1].time_alive;
+		  if(thread_info_array[msg_struct.data1].status == ALIVE_TASK)
+		  {
+			  msg_struct.data3 = ((uint32_t) xTaskGetTickCount())-thread_info_array[msg_struct.data1].time_alive;
+		  }
+		  else
+		  {
+			  msg_struct.data3 = thread_info_array[msg_struct.data1].time_alive;
+		  }
 	  }
 	  else
 	  {
@@ -550,14 +589,12 @@ void StartUARTTask(void *argument)
 	/* Infinite loop */
 	for(;;)
 	{
-		 pos = UART_RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart2.hdmarx);
+		 pos = UART_RX_BUF_SIZE - __HAL_DMA_GET_COUNTER(huart1.hdmarx);
 		if (pos != old_pos)
 		{
 
 			if (pos >= old_pos+4)
 			{
-				len = sprintf((char*)txBuf,"new Data\n");
-				HAL_UART_Transmit(&huart2, txBuf, len, HAL_MAX_DELAY);
 
 				//normal case
 
@@ -588,13 +625,20 @@ void StartUARTTask(void *argument)
 		{
 			monitor_struct_to_uint8(monitor_struct,txBuf);
 			HAL_UART_Transmit(&huart1, txBuf, sizeof(struct monitor_msg), 100);
+			len = sprintf((char*) txBuf,"MSG:ID %hu ID/Numb: %hu,Production Rate: %hu, Time Alive/Stack: %lu \n",monitor_struct.msg_ID, monitor_struct.data1,monitor_struct.data2,monitor_struct.data3) ;
+			HAL_UART_Transmit(&huart2, txBuf, len, HAL_MAX_DELAY);
 
 		}
 		i=0;
 		while((xQueueReceive(producerQueueHandle, &producer_struct, 0)!=errQUEUE_EMPTY)&& i <500)
 		{
 			producer_struct_to_uint8(producer_struct,txBuf);
-			HAL_UART_Transmit(&huart1, txBuf, sizeof(struct producer_msg), 100);
+			HAL_UART_Transmit(&huart1, txBuf, 4, 100);
+			HAL_UART_Transmit(&huart2, txBuf, 4, 100);
+			len = sprintf((char*) txBuf,"Producer %hu Value: %hu\n", producer_struct.producer_ID, producer_struct.producer_value) ;
+			HAL_UART_Transmit(&huart2, txBuf, len, HAL_MAX_DELAY);
+			len = sprintf((char*) txBuf,"%hu, %hu, %hu, %hu\n", txBuf[0], txBuf[1],txBuf[2], txBuf[3]) ;
+			HAL_UART_Transmit(&huart2, txBuf, len, HAL_MAX_DELAY);
 			i++;
 		}
 
@@ -603,6 +647,37 @@ void StartUARTTask(void *argument)
 		osDelay(1);
 	 }
   /* USER CODE END StartUARTTask */
+}
+
+/* USER CODE BEGIN Header_StartGreenLEDTask */
+/**
+* @brief Function implementing the GreenLEDTAsk thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartGreenLEDTask */
+void StartGreenLEDTask(void *argument)
+{
+  /* USER CODE BEGIN StartGreenLEDTask */
+  /* Infinite loop */
+  for(;;)
+  {
+		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+	  /* Infinite loop */
+	  for(;;)
+	  {
+		  xSemaphoreTake(LedSemaphoreHandle, HAL_MAX_DELAY);
+		  for(int i = 0; i<20; i++)
+		  {
+			  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
+			  osDelay(100);
+			  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
+			  osDelay(100);
+		  }
+
+	  }
+  }
+  /* USER CODE END StartGreenLEDTask */
 }
 
 /**
